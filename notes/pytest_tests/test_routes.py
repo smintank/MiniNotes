@@ -2,6 +2,7 @@ from http import HTTPStatus
 
 import pytest
 from django.urls import reverse
+from pytest_django.asserts import assertRedirects
 
 
 def test_home_availability_for_anonymous_user(client):
@@ -39,8 +40,27 @@ def test_pages_availability_for_auth_user(admin_client, name):
     ('notes:detail', 'notes:edit', 'notes:delete'),
 )
 def test_pages_availability_for_different_users(
-        parametrized_client, name, note, expected_status
+        parametrized_client, name, slug_for_args, expected_status
 ):
-    url = reverse(name, args=(note.slug,))
+    url = reverse(name, args=slug_for_args)
     response = parametrized_client.get(url)
     assert response.status_code == expected_status
+
+
+@pytest.mark.parametrize(
+    'name, args',
+    (
+        ('notes:detail', pytest.lazy_fixture('slug_for_args')),
+        ('notes:edit', pytest.lazy_fixture('slug_for_args')),
+        ('notes:delete', pytest.lazy_fixture('slug_for_args')),
+        ('notes:add', None),
+        ('notes:success', None),
+        ('notes:list', None),
+    ),
+)
+def test_redirects(client, name, args):
+    login_url = reverse('users:login')
+    url = reverse(name, args=args)
+    expected_url = f'{login_url}?next={url}'
+    response = client.get(url)
+    assertRedirects(response, expected_url)
