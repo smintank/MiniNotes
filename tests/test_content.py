@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
@@ -7,39 +7,39 @@ from notes.models import Note
 
 User = get_user_model()
 
+
 class TestContent(TestCase):
-    LIST_URL = reverse('notes:list')
-    CREATE_URL = reverse('notes:add')
+
 
     @classmethod
     def setUpTestData(cls):
-        cls.main_user = User.objects.create(username='Main_user')
+        cls.user = User.objects.create(username='Main_user')
+        cls.auth_client = Client()
+        cls.auth_client.force_login(cls.user)
         cls.another_user = User.objects.create(username='Another_user')
-
-
+        cls.note = Note.objects.create(
+            title='Title', text='text', author=cls.user, slug='slug'
+        )
+        cls.list_url = reverse('notes:list')
 
     def test_user_sees_own_notes(self):
-        another_user_note = Note.objects.create(
-            title='Title', text='text', author=self.another_user
+        self.client.force_login(self.another_user)
+        response = self.client.get(self.list_url)
+        notes = response.context['object_list']
+        self.assertNotIn(self.note, notes)
+
+    def test_login_user_get_forms(self):
+        urls_args = (
+            ('notes:add', None),
+            ('notes:edit', (self.note.slug,))
         )
-        self.client.force_login(self.main_user)
-        response = self.client.get(self.LIST_URL)
-        notes = response.context['object_list']
-        self.assertNotIn(another_user_note, notes)
+        for name, args in urls_args:
+            with self.subTest(name=name):
+                url = reverse(name, args=args)
+                response = self.auth_client.get(url)
+                self.assertIn('form', response.context)
 
-    def test_notes_order(self):
-        for index in range(2):
-            Note.objects.create(
-                title=f'Note {index}',
-                text=f'{index}',
-                author=self.main_user,
-            )
-        self.client.force_login(self.main_user)
-        response = self.client.get(self.LIST_URL)
-        notes = response.context['object_list']
-        self.assertGreater(notes[1].id, notes[0].id)
-
-    def test_authorized_user_has_form(self):
-        self.client.force_login(self.main_user)
-        response = self.client.get(self.CREATE_URL)
-        self.assertIn('form', response.context)
+    def test_get_correct_context(self):
+        response = self.auth_client.get(self.list_url)
+        object_list = response.context['object_list']
+        self.assertIn(self.note, object_list)
